@@ -57,17 +57,27 @@ export default class VimImPlugin extends Plugin {
 
 		// when open a file, to initialize current
 		// editor type CodeMirror5 or CodeMirror6
-		this.app.workspace.on('active-leaf-change', async () => {
+		this.registerEvent(this.app.workspace.on('active-leaf-change', async () => {
 			const view = this.getActiveView();
 			if (view) {
 				const editor = this.getCodeMirror(view);
-                this.initActiveLeafChange(editor.state.vim);
 				if (editor) {
+					this.initActiveLeafChange(editor.state.vim);
 					editor.off('vim-mode-change', this.onVimModeChanged);
 					editor.on('vim-mode-change', this.onVimModeChanged);
 				}
 			}
+		}));
+
+		// Focus can come back to the editor without any vim mode change, e.g.
+		// from the inline title, a modal, or another app where the IM was
+		// switched. Make sure normal mode gets the default IM in that case.
+		this.registerDomEvent(document, 'focusin', (evt: FocusEvent) => {
+			if ((evt.target as HTMLElement)?.closest?.('.cm-editor')) {
+				this.syncFocusedEditor();
+			}
 		});
+		this.registerDomEvent(window, 'focus', () => this.syncFocusedEditor());
 
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
@@ -157,8 +167,24 @@ export default class VimImPlugin extends Plugin {
 
     
 
+	private syncFocusedEditor() {
+		const view = this.getActiveView();
+		if (!view || !view.editor.hasFocus()) {
+			return;
+		}
+		const editor = this.getCodeMirror(view);
+		if (!editor) {
+			return;
+		}
+		editor.off('vim-mode-change', this.onVimModeChanged);
+		editor.on('vim-mode-change', this.onVimModeChanged);
+		if (!editor.state.vim?.insertMode) {
+			this.switchToNormal();
+		}
+	}
+
 	async initActiveLeafChange(vimObj: any) {
-        if(vimObj.insertMode)
+        if(vimObj?.insertMode)
         {
             if (this.previousMode != "insert")this.switchToInsert();
         }
